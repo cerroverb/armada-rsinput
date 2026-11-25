@@ -52,8 +52,11 @@ patch_hash = hashlib.sha256("".join(n + patches[n] for n in sorted(patches)).enc
 images = {}
 for branch in IMAGE_BRANCHES:
     for commit in git("rev-list", f"--max-count={COMMITS_PER_BRANCH}", f"origin/{branch}").split():
-        tree = git("rev-parse", f"{commit}:packages/kernel").strip()
-        images[commit] = (hashlib.sha256((tree + patch_hash).encode()).hexdigest()[:16], tree)
+        # Older commits carry no packages/kernel, so their images have no kernel built here.
+        tree = subprocess.run(["git", "-C", armada, "rev-parse", "--verify", "-q", f"{commit}:packages/kernel"],
+                              capture_output=True, text=True).stdout.strip()
+        if tree:
+            images[commit] = (hashlib.sha256((tree + patch_hash).encode()).hexdigest()[:16], tree)
 
 try:
     with open(old_index_path) as f:
