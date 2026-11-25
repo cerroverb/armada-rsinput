@@ -14,6 +14,10 @@ concurrency:
   group: build
   cancel-in-progress: false
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
   build:
     runs-on: ubuntu-24.04-arm
@@ -53,12 +57,17 @@ jobs:
 
       - name: Publish
         run: |
-          gh release view "$RELEASE" >/dev/null 2>&1 || gh release create "$RELEASE" --title "rsinput modules" --notes "Rebuilt automatically for each Armada kernel. Devices read index.json."
+          set -euo pipefail
+          # The GitHub API sometimes answers 500; each call gets four tries.
+          retry() { for wait in 5 15 45 0; do "$@" && return 0; [ "$wait" -gt 0 ] && sleep "$wait"; done; return 1; }
+          retry gh release view "$RELEASE" >/dev/null 2>&1 \
+            || retry gh release create "$RELEASE" --title "rsinput modules" --notes "Rebuilt automatically for each Armada kernel. Devices read index.json."
           shopt -s nullglob
-          gh release upload "$RELEASE" out/rsinput-*.ko --clobber
-          gh release upload "$RELEASE" out/index.json --clobber
+          modules=(out/rsinput-*.ko)
+          [ ${#modules[@]} -eq 0 ] || retry gh release upload "$RELEASE" "${modules[@]}" --clobber
+          retry gh release upload "$RELEASE" out/index.json --clobber
           # Remove modules no current image uses.
           keep=$(jq -r '.modules | keys[] | "rsinput-\(.).ko"' out/index.json)
-          for asset in $(gh release view "$RELEASE" --json assets -q '.assets[].name'); do
-            case "$asset" in rsinput-*.ko) grep -qx "$asset" <<<"$keep" || gh release delete-asset "$RELEASE" "$asset" -y ;; esac
+          for asset in $(retry gh release view "$RELEASE" --json assets -q '.assets[].name'); do
+            case "$asset" in rsinput-*.ko) grep -qx "$asset" <<<"$keep" || retry gh release delete-asset "$RELEASE" "$asset" -y ;; esac
           done
