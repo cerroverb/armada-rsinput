@@ -5,7 +5,8 @@
 # Follows Armada's packages/kernel/scripts/build-kernel.sh up to modules_prepare:
 # kernel.org stable source, patches/series, defconfig plus the config fragment.
 set -euo pipefail
-armada=$1 commit=$2 patch_dir=$3 out_ko=$4
+# Absolute paths, because the build below runs inside the kernel tree.
+armada=$(realpath "$1") commit=$2 patch_dir=$(realpath "$3") out_ko=$(realpath -m "$4")
 cache=${CACHE_DIR:-$PWD/work/cache}
 work=$(mktemp -d "${TMPDIR:-/tmp}/rsinput-build.XXXXXX")
 trap 'rm -rf "$work"' EXIT
