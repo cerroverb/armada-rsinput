@@ -108,10 +108,11 @@ for commit, (key, tree) in images.items():
     vermagic = subprocess.run(["modinfo", "-F", "vermagic", ko], check=True, capture_output=True, text=True).stdout.strip()
     modules[key] = {"sha256": digest, "vermagic": vermagic, "kernel_tree": tree, "patches": sorted(patches)}
 
+current_keys = {key for key, _ in images.values()}
 index = {
     "images": {commit: key for commit, (key, _) in images.items() if key in modules},
     "modules": modules,
-    "failed": {key: commit for key, commit in failed.items() if any(k == key for k, _ in images.values())},
+    "failed": {key: commit for key, commit in failed.items() if key in current_keys},
 }
 with open(os.path.join(out_dir, "index.json"), "w") as f:
     json.dump(index, f, indent=1, sort_keys=True)
