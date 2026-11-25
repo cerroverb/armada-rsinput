@@ -49,12 +49,23 @@ for name, text in patches.items():
         f.write(text)
 patch_hash = hashlib.sha256("".join(n + patches[n] for n in sorted(patches)).encode()).hexdigest()
 
+# The parts of packages/kernel that can change the module. Device trees and notes cannot.
+KERNEL_INPUTS = ("BASE.env", "build.sh", "config", "patches", "scripts")
+
+
+def kernel_inputs(commit):
+    """Object ids of the module-relevant packages/kernel parts, "" when the commit has none."""
+    result = subprocess.run(["git", "-C", armada, "rev-parse",
+                             *(f"{commit}:packages/kernel/{part}" for part in KERNEL_INPUTS)],
+                            capture_output=True, text=True)
+    # Older commits carry no packages/kernel, so their images have no kernel built here.
+    return " ".join(result.stdout.split()) if result.returncode == 0 else ""
+
+
 images = {}
 for branch in IMAGE_BRANCHES:
     for commit in git("rev-list", f"--max-count={COMMITS_PER_BRANCH}", f"origin/{branch}").split():
-        # Older commits carry no packages/kernel, so their images have no kernel built here.
-        tree = subprocess.run(["git", "-C", armada, "rev-parse", "--verify", "-q", f"{commit}:packages/kernel"],
-                              capture_output=True, text=True).stdout.strip()
+        tree = kernel_inputs(commit)
         if tree:
             images[commit] = (hashlib.sha256((tree + patch_hash).encode()).hexdigest()[:16], tree)
 
