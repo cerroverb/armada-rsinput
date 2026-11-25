@@ -1,0 +1,64 @@
+name: Build rsinput for Armada images
+
+on:
+  schedule:
+    - cron: "17 */3 * * *"
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04-arm
+    container: fedora:44
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      RELEASE: modules
+    steps:
+      - name: Install build tools
+        # The packages Armada's packages/kernel/build.sh installs, plus git, gh and jq.
+        run: |
+          dnf -y install gcc binutils make bc bison flex openssl-devel elfutils-libelf-devel \
+            dwarves zstd xz cpio patch curl perl-interpreter python3 findutils diffutils gawk \
+            grep sed coreutils hostname gzip tar kmod git gh jq
+
+      - uses: actions/checkout@v4
+
+      - name: Fetch Armada and the PR branches
+        run: |
+          git clone --filter=blob:none --no-checkout https://github.com/armada-os/armada.git armada
+          git -C armada fetch --filter=blob:none origin main beta
+          git -C armada remote add fork https://github.com/cerroverb/armada.git
+          git -C armada fetch --filter=blob:none fork rsinput-report-rate direct-controller-mode
+
+      - name: Cache kernel sources
+        uses: actions/cache@v4
+        with:
+          path: work/cache
+          key: kernel-sources-${{ hashFiles('build-module.sh') }}
+
+      - name: Build modules and index
+        run: |
+          mkdir -p out
+          gh release download "$RELEASE" -p index.json -D work 2>/dev/null || true
+          python3 update-index.py armada work/index.json out
+
+      - name: Publish
+        run: |
+          gh release view "$RELEASE" >/dev/null 2>&1 || gh release create "$RELEASE" --title "rsinput modules" --notes "Rebuilt automatically for each Armada kernel. Devices read index.json."
+          shopt -s nullglob
+          gh release upload "$RELEASE" out/rsinput-*.ko --clobber
+          gh release upload "$RELEASE" out/index.json --clobber
+          # Remove modules no current image uses.
+          keep=$(jq -r '.modules | keys[] | "rsinput-\(.).ko"' out/index.json)
+          for asset in $(gh release view "$RELEASE" --json assets -q '.assets[].name'); do
+            case "$asset" in rsinput-*.ko) grep -qx "$asset" <<<"$keep" || gh release delete-asset "$RELEASE" "$asset" -y ;; esac
+          done
