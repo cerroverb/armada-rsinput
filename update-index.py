@@ -11,7 +11,9 @@ OUT_DIR/index.json. A device looks up the commit in its IMAGE_VERSION under "ima
 """
 import hashlib, json, os, subprocess, sys
 
-IMAGE_BRANCHES = ("main", "beta")
+# Armada builds Preview (tag testing) from main and promotes those images to Beta and
+# Stable (.github/workflows/build.yml), so main's commits cover every channel.
+IMAGE_BRANCHES = ("main",)
 COMMITS_PER_BRANCH = 300
 PR_BRANCHES = ("rsinput-report-rate", "direct-controller-mode")
 SERIES = "packages/kernel/patches/series"

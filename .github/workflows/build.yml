@@ -35,7 +35,7 @@ jobs:
       - name: Fetch Armada and the PR branches
         run: |
           git clone --filter=blob:none --no-checkout https://github.com/armada-os/armada.git armada
-          git -C armada fetch --filter=blob:none origin main beta
+          git -C armada fetch --filter=blob:none origin main
           git -C armada remote add fork https://github.com/cerroverb/armada.git
           git -C armada fetch --filter=blob:none fork rsinput-report-rate direct-controller-mode
 
