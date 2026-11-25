@@ -73,14 +73,19 @@ for branch in IMAGE_BRANCHES:
 
 try:
     with open(old_index_path) as f:
-        old_modules = json.load(f)["modules"]
+        old_index = json.load(f)
 except FileNotFoundError:
-    old_modules = {}
+    old_index = {}
+old_modules = old_index.get("modules", {})
+# Kernels that failed to build before. Older kernels can need an older toolchain than
+# Fedora 44, so they are recorded once and not retried.
+failed = old_index.get("failed", {})
+newest_key = next(iter(images.values()))[0]
 
 modules, builds = {}, 0
 # Newest commits first, so the kernels devices are most likely to run get built first.
 for commit, (key, tree) in images.items():
-    if key in modules:
+    if key in modules or key in failed:
         continue
     if key in old_modules:
         modules[key] = old_modules[key]
@@ -89,7 +94,15 @@ for commit, (key, tree) in images.items():
         continue
     builds += 1
     ko = os.path.join(out_dir, f"rsinput-{key}.ko")
-    subprocess.run([os.path.join(here, "build-module.sh"), armada, commit, patch_dir, ko], check=True)
+    try:
+        subprocess.run([os.path.join(here, "build-module.sh"), armada, commit, patch_dir, ko], check=True)
+    except subprocess.CalledProcessError:
+        # The newest kernel is the one devices update to, so its failure fails the run.
+        if key == newest_key:
+            raise
+        print(f"build failed for {commit} ({key}), recorded and skipped from now on")
+        failed[key] = commit
+        continue
     with open(ko, "rb") as f:
         digest = hashlib.sha256(f.read()).hexdigest()
     vermagic = subprocess.run(["modinfo", "-F", "vermagic", ko], check=True, capture_output=True, text=True).stdout.strip()
@@ -98,6 +111,7 @@ for commit, (key, tree) in images.items():
 index = {
     "images": {commit: key for commit, (key, _) in images.items() if key in modules},
     "modules": modules,
+    "failed": {key: commit for key, commit in failed.items() if any(k == key for k, _ in images.values())},
 }
 with open(os.path.join(out_dir, "index.json"), "w") as f:
     json.dump(index, f, indent=1, sort_keys=True)
